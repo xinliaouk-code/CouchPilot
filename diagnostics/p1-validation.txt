@@ -1,0 +1,23 @@
+P1-a
+** BUILD SUCCEEDED **
+P1-b
+** BUILD SUCCEEDED **
+P1-c
+** BUILD SUCCEEDED **
+P1-d
+** BUILD SUCCEEDED **
+P1-e
+** BUILD SUCCEEDED **
+P1-final
+** BUILD SUCCEEDED **
+PASS D: MRU order, repeat activation, previous and terminated apps
+PASS C: deadzone, velocity, drag transitions and idempotent release
+PASS B: all directions, initial recenter, hysteresis, retained selection
+PASS integration: 30 alternating Home and chord cycles, one trigger per hold
+PASS E: independent settings store restores trigger, mode, display and mouse values
+PASS A: initial hold, exact threshold, duplicate input, short press
+GameController controllers: 0
+true
+build/Build/Products/Release/CouchPilot.app: valid on disk
+build/Build/Products/Release/CouchPilot.app: satisfies its Designated Requirement
+build/Build/Products/Release/CouchPilot.app/Contents/MacOS/CouchPilot: Mach-O 64-bit executable arm64

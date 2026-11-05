@@ -1,9 +1,21 @@
 // !$*UTF8*$!
 { archiveVersion = 1; classes = {}; objectVersion = 56; objects = {
+ B00000000000000000000074 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsStore.swift; sourceTree = "<group>"; };
+ B00000000000000000000075 = {isa = PBXBuildFile; fileRef = B00000000000000000000074; };
+ B00000000000000000000072 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSwitcher.swift; sourceTree = "<group>"; };
+ B00000000000000000000073 = {isa = PBXBuildFile; fileRef = B00000000000000000000072; };
+ B00000000000000000000070 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MouseEmulation.swift; sourceTree = "<group>"; };
+ B00000000000000000000071 = {isa = PBXBuildFile; fileRef = B00000000000000000000070; };
+ B0000000000000000000006E = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RadialSelection.swift; sourceTree = "<group>"; };
+ B0000000000000000000006F = {isa = PBXBuildFile; fileRef = B0000000000000000000006E; };
+ B0000000000000000000006C = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RadialOverlay.swift; sourceTree = "<group>"; };
+ B0000000000000000000006D = {isa = PBXBuildFile; fileRef = B0000000000000000000006C; };
+ B0000000000000000000006A = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TriggerManager.swift; sourceTree = "<group>"; };
+ B0000000000000000000006B = {isa = PBXBuildFile; fileRef = B0000000000000000000006A; };
  A00000000000000000000001 = {isa = PBXProject; attributes = {LastUpgradeCheck = 1600;}; buildConfigurationList = A00000000000000000000002; compatibilityVersion = "Xcode 14.0"; developmentRegion = en; mainGroup = A00000000000000000000003; productRefGroup = A00000000000000000000004; targets = (A00000000000000000000005,); };
  A00000000000000000000003 = {isa = PBXGroup; children = (A00000000000000000000006,A00000000000000000000004,); sourceTree = "<group>"; };
  A00000000000000000000004 = {isa = PBXGroup; children = (A00000000000000000000007,); name = Products; sourceTree = "<group>"; };
- A00000000000000000000006 = {isa = PBXGroup; children = (A00000000000000000000008,A00000000000000000000009,A0000000000000000000000A,); path = CouchPilot; sourceTree = "<group>"; };
+ A00000000000000000000006 = {isa = PBXGroup; children = (B00000000000000000000074,B00000000000000000000072,B00000000000000000000070,B0000000000000000000006E,B0000000000000000000006C,B0000000000000000000006A,A00000000000000000000008,A00000000000000000000009,A0000000000000000000000A,); path = CouchPilot; sourceTree = "<group>"; };
  A00000000000000000000007 = {isa = PBXFileReference; explicitFileType = wrapper.application; path = CouchPilot.app; sourceTree = BUILT_PRODUCTS_DIR; };
  A00000000000000000000008 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CouchPilotApp.swift; sourceTree = "<group>"; };
  A00000000000000000000009 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControllerModel.swift; sourceTree = "<group>"; };
@@ -12,12 +24,12 @@
  A0000000000000000000000C = {isa = PBXBuildFile; fileRef = A00000000000000000000009; };
  A0000000000000000000000D = {isa = PBXBuildFile; fileRef = A0000000000000000000000A; };
  A00000000000000000000005 = {isa = PBXNativeTarget; buildConfigurationList = A0000000000000000000000E; buildPhases = (A0000000000000000000000F,A00000000000000000000010,); buildRules = (); dependencies = (); name = CouchPilot; productName = CouchPilot; productReference = A00000000000000000000007; productType = "com.apple.product-type.application"; };
- A0000000000000000000000F = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A0000000000000000000000B,A0000000000000000000000C,A0000000000000000000000D,); runOnlyForDeploymentPostprocessing = 0; };
+ A0000000000000000000000F = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (B00000000000000000000075,B00000000000000000000073,B00000000000000000000071,B0000000000000000000006F,B0000000000000000000006D,B0000000000000000000006B,A0000000000000000000000B,A0000000000000000000000C,A0000000000000000000000D,); runOnlyForDeploymentPostprocessing = 0; };
  A00000000000000000000010 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
  A00000000000000000000002 = {isa = XCConfigurationList; buildConfigurations = (A00000000000000000000011,A00000000000000000000012,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
  A0000000000000000000000E = {isa = XCConfigurationList; buildConfigurations = (A00000000000000000000013,A00000000000000000000014,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
- A00000000000000000000011 = {isa = XCBuildConfiguration; buildSettings = {SDKROOT = macosx; ALWAYS_SEARCH_USER_PATHS = NO; MACOSX_DEPLOYMENT_TARGET = 13.0;}; name = Debug; };
- A00000000000000000000012 = {isa = XCBuildConfiguration; buildSettings = {SDKROOT = macosx; ALWAYS_SEARCH_USER_PATHS = NO; MACOSX_DEPLOYMENT_TARGET = 13.0;}; name = Release; };
- A00000000000000000000013 = {isa = XCBuildConfiguration; buildSettings = {PRODUCT_BUNDLE_IDENTIFIER = local.couchpilot.diagnostics; PRODUCT_NAME = "$(TARGET_NAME)"; GENERATE_INFOPLIST_FILE = YES; SWIFT_VERSION = 5.0; CODE_SIGN_IDENTITY = "-"; CODE_SIGN_STYLE = Manual;}; name = Debug; };
- A00000000000000000000014 = {isa = XCBuildConfiguration; buildSettings = {PRODUCT_BUNDLE_IDENTIFIER = local.couchpilot.diagnostics; PRODUCT_NAME = "$(TARGET_NAME)"; GENERATE_INFOPLIST_FILE = YES; SWIFT_VERSION = 5.0; CODE_SIGN_IDENTITY = "-"; CODE_SIGN_STYLE = Manual;}; name = Release; };
+ A00000000000000000000011 = {isa = XCBuildConfiguration; buildSettings = {SDKROOT = macosx; ALWAYS_SEARCH_USER_PATHS = NO; MACOSX_DEPLOYMENT_TARGET = 14.0;}; name = Debug; };
+ A00000000000000000000012 = {isa = XCBuildConfiguration; buildSettings = {SDKROOT = macosx; ALWAYS_SEARCH_USER_PATHS = NO; MACOSX_DEPLOYMENT_TARGET = 14.0;}; name = Release; };
+ A00000000000000000000013 = {isa = XCBuildConfiguration; buildSettings = {PRODUCT_BUNDLE_IDENTIFIER = local.couchpilot.diagnostics; PRODUCT_NAME = "$(TARGET_NAME)"; GENERATE_INFOPLIST_FILE = YES; INFOPLIST_KEY_LSUIElement = YES; SWIFT_VERSION = 5.0; CODE_SIGN_IDENTITY = "-"; CODE_SIGN_STYLE = Manual;}; name = Debug; };
+ A00000000000000000000014 = {isa = XCBuildConfiguration; buildSettings = {PRODUCT_BUNDLE_IDENTIFIER = local.couchpilot.diagnostics; PRODUCT_NAME = "$(TARGET_NAME)"; GENERATE_INFOPLIST_FILE = YES; INFOPLIST_KEY_LSUIElement = YES; SWIFT_VERSION = 5.0; CODE_SIGN_IDENTITY = "-"; CODE_SIGN_STYLE = Manual;}; name = Release; };
  }; rootObject = A00000000000000000000001; }
