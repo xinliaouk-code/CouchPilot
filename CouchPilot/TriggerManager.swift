@@ -34,8 +34,7 @@ final class TriggerManager {
     private var combo = HoldGate()
     private var timer: DispatchWorkItem?
     var homeEnabled = false { didSet { if oldValue != homeEnabled { reset() } } }
-    var homeMS = 600 { didSet { if oldValue != homeMS { reset() } } }
-    var comboMS = 700 { didSet { if oldValue != comboMS { reset() } } }
+    var holdMS = 600 { didSet { if oldValue != holdMS { reset() } } }
     var combination: Set<String> = ["LB", "RB", "Menu"] {
         didSet { if oldValue != combination { reset() } }
     }
@@ -64,7 +63,7 @@ final class TriggerManager {
     private func schedule() {
         timer?.cancel()
         timer = nil
-        let deadlines = [home.deadline(after: homeMS), combo.deadline(after: comboMS)].compactMap { $0 }
+        let deadlines = [home.deadline(after: holdMS), combo.deadline(after: holdMS)].compactMap { $0 }
         guard let deadline = deadlines.min() else { return }
         let work = DispatchWorkItem { [weak self] in
             self?.completeHolds(at: DispatchTime.now().uptimeNanoseconds)
@@ -75,8 +74,8 @@ final class TriggerManager {
     }
 
     private func completeHolds(at tick: UInt64) {
-        let h = home.fire(at: tick, after: homeMS)
-        let c = combo.fire(at: tick, after: comboMS)
+        let h = home.fire(at: tick, after: holdMS)
+        let c = combo.fire(at: tick, after: holdMS)
         if h || c {
             reset()
             fire?(h ? "Home" : "Controller chord")

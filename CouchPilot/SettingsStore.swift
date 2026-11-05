@@ -11,9 +11,13 @@ struct PilotConfiguration: Codable, Equatable {
         get { homeTriggerEnabled ?? false }
         set { homeTriggerEnabled = newValue }
     }
-    var homeMS = 600
+    // Preserve the existing Home threshold when loading settings saved before the merge.
+    private var homeMS = 600
+    var radialHoldMS: Int {
+        get { homeMS }
+        set { homeMS = newValue }
+    }
     var comboEnabled = true
-    var comboMS = 700
     var combo = ["LB", "RB", "Menu"]
     var hotKey = UInt32(kVK_Space)
     var hotModifiers = UInt32(controlKey | optionKey)
@@ -24,6 +28,11 @@ struct PilotConfiguration: Codable, Equatable {
     var selectionThreshold = 0.50
     var display: UInt32 = 0
     var mouse = MouseTuning()
+    private var savedDesktopMapping: DesktopMapping?
+    var desktopMapping: DesktopMapping {
+        get { savedDesktopMapping?.upgraded ?? DesktopMapping() }
+        set { savedDesktopMapping = newValue }
+    }
     var favorites: [FavoriteApp] = []
 }
 
@@ -41,6 +50,7 @@ final class SettingsStore: ObservableObject {
     @Published var trusted = false
     @Published var keyboard = "Not Verified"
     @Published var combo = "Not Verified"
+    @Published var reservedDesktopButtons: Set<String> = []
     @Published var home = "Not Verified"
     @Published var lastTrigger = "—"
     @Published var lastError = "—"
@@ -97,12 +107,16 @@ struct PilotSettingsView: View {
             Form {
                 LabeledContent("菜单栏", value: "常驻 · 点击图标切换轮盘")
                 Picker("当前模式", selection: Binding(get: { store.mouseMode }, set: { store.setMode?($0) })) {
-                    Text("手柄").tag(false)
-                    Text("鼠标").tag(true)
+                    Text("手柄模式").tag(false)
+                    Text("桌面模式").tag(true)
+                }
+                if store.mouseMode && !store.trusted {
+                    Text("桌面模式等待辅助功能授权。请到「指针」页检查。")
+                        .foregroundStyle(.secondary)
                 }
                 Picker("默认启动模式", selection: $store.value.startInMouse) {
-                    Text("手柄").tag(false)
-                    Text("鼠标").tag(true)
+                    Text("手柄模式").tag(false)
+                    Text("桌面模式").tag(true)
                 }
                 LabeledContent("登录时打开", value: store.loginStatus)
                 HStack {
@@ -117,8 +131,6 @@ struct PilotSettingsView: View {
                 Toggle("监听后台手柄事件", isOn: $store.value.background)
                 Toggle("用 Home 长按呼出轮盘（实验）", isOn: $store.value.homeOpensRadial)
                 Toggle("请求禁用 Home 系统手势", isOn: $store.value.requestHomeGestureDisabled)
-                Stepper("Home 长按 · \(store.value.homeMS) ms", value: $store.value.homeMS, in: 200...2000, step: 50)
-                    .disabled(!store.value.homeOpensRadial)
                 LabeledContent("Home", value: store.home)
                 if #available(macOS 27.0, *) {
                     LabeledContent("macOS Home 动作", value: model.homeSystemAction)
@@ -141,7 +153,10 @@ struct PilotSettingsView: View {
                 }
                 LabeledContent("键盘注册", value: store.keyboard)
                 Toggle("启用全局手柄组合键", isOn: $store.value.comboEnabled)
-                Stepper("组合键长按 · \(store.value.comboMS) ms", value: $store.value.comboMS, in: 300...2500, step: 50)
+                Stepper("快捷键长按呼出轮盘时间 · \(store.value.radialHoldMS) ms",
+                        value: $store.value.radialHoldMS, in: 200...2500, step: 50)
+                Text("手柄组合键和 Home 长按共用此时间。Home 呼出需单独启用。")
+                    .foregroundStyle(.secondary)
                 LabeledContent(store.value.combo.joined(separator: " + "), value: store.combo)
                 HStack {
                     Button(store.learning ? "取消学习" : "学习三个手柄键") {
@@ -153,7 +168,7 @@ struct PilotSettingsView: View {
                 if store.learning {
                     Text("依次按三个不同的手柄按钮 · \(store.learned.joined(separator: " + "))")
                 }
-                Text("组合键也可能被前台游戏收到。鼠标模式下，组合键中的鼠标操作键将保留给组合键。")
+                Text("组合键也可能被前台游戏收到。桌面模式下，启用的轮盘组合键优先。")
                     .foregroundStyle(.secondary)
             }.formStyle(.grouped).tabItem { Label("触发", systemImage: "button.programmable") }
 
@@ -190,10 +205,45 @@ struct PilotSettingsView: View {
                 slider("灵敏度", $store.value.mouse.sensitivity, 0.3...2)
                 slider("最大速度", $store.value.mouse.maximum, 200...3500)
                 slider("加速度曲线", $store.value.mouse.acceleration, 0.7...3)
-                slider("精细模式速度", $store.value.mouse.fine, 0.1...0.75)
+                LabeledContent("精细移动速度（默认 L2）") {
+                    Slider(value: $store.value.mouse.fine, in: 0.01...0.75, step: 0.01).frame(width: 240)
+                    Text(store.value.mouse.fine.formatted(.percent.precision(.fractionLength(0))))
+                        .monospacedDigit().frame(width: 64)
+                }
                 slider("滚动速度", $store.value.mouse.scroll, 100...1400)
                 Toggle("限制光标在选定显示器", isOn: $store.value.mouse.restrict)
-            }.formStyle(.grouped).tabItem { Label("鼠标", systemImage: "cursorarrow") }
+            }.formStyle(.grouped).tabItem { Label("指针", systemImage: "cursorarrow") }
+
+            Form {
+                Section("摇杆") {
+                    Toggle("交换左右摇杆", isOn: $store.value.desktopMapping.swapSticks)
+                    let swapped = store.value.desktopMapping.swapSticks
+                    LabeledContent("移动光标", value: swapped ? "右摇杆" : "左摇杆")
+                    LabeledContent("横向与纵向滚动", value: swapped ? "左摇杆" : "右摇杆")
+                }
+                Section("按键") {
+                    ForEach(DesktopAction.allCases) { action in
+                        let selected = store.value.desktopMapping[action]
+                        Picker(action.label, selection: Binding(
+                            get: { store.value.desktopMapping[action] },
+                            set: { store.value.desktopMapping[action] = $0 }
+                        )) {
+                            Text("未分配").tag(String?.none)
+                            ForEach(DesktopMapping.buttons, id: \.self) { button in
+                                let reserved = store.reservedDesktopButtons.contains(button)
+                                let supportsTap = action == .pageUp || action == .pageDown
+                                if !reserved || supportsTap || selected == button {
+                                    Text(DesktopMapping.label(for: button) + (reserved ? (supportsTap ? "（单按）" : "（轮盘占用）") : ""))
+                                        .tag(Optional(button))
+                                }
+                            }
+                        }
+                    }
+                    Text("一个按键对应一个操作。重新分配时，原来的操作会取消绑定。轮盘组合键优先。单按 L1/R1 在松开时翻页。按住 X 时可用方向键选择，A 确认、B 取消。")
+                        .foregroundStyle(.secondary)
+                    Button("应用推荐映射") { store.value.desktopMapping = DesktopMapping() }
+                }
+            }.formStyle(.grouped).tabItem { Label("桌面映射", systemImage: "gamecontroller") }
 
             Form {
                 Section("收藏应用") {

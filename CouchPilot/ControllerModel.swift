@@ -35,7 +35,7 @@ final class ControllerModel: ObservableObject {
     @Published var background = true {
         didSet {
             GCController.shouldMonitorBackgroundEvents = background
-            if !background && !NSApp.isActive { cancelHomeDiagnostic() }
+            if !background && NSApp?.isActive != true { cancelHomeDiagnostic() }
             log("setting", "backgroundMonitoring", String(background))
         }
     }
@@ -49,6 +49,12 @@ final class ControllerModel: ObservableObject {
     var onFocus: ((Bool) -> Void)?
     private var axisLog: [String: UInt64] = [:]
     private var controller: GCController?
+    private let exclusiveInput = VaderExclusiveInput()
+    private(set) var exclusiveActive = false
+    private var exclusiveSeeded = false
+    private var exclusiveWatchdog: Timer?
+    private var lastExclusiveReport = 0.0
+    var onExclusiveLoss: ((String) -> Void)?
     private var pressedStates: [String: Bool] = [:]
     private var homeDown: UInt64?
     private var homeTimer: DispatchWorkItem?
@@ -66,9 +72,9 @@ final class ControllerModel: ObservableObject {
             observers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated {
                     guard let self else { return }
-                    if !NSApp.isActive && !self.background { self.cancelHomeDiagnostic() }
-                    self.log("focus", "application", NSApp.isActive ? "foreground" : "background")
-                    self.onFocus?(NSApp.isActive)
+                    if NSApp?.isActive != true && !self.background { self.cancelHomeDiagnostic() }
+                    self.log("focus", "application", NSApp?.isActive == true ? "foreground" : "background")
+                    self.onFocus?(NSApp?.isActive == true)
                 }
             })
         }
@@ -77,6 +83,7 @@ final class ControllerModel: ObservableObject {
     }
     deinit { observers.forEach { NotificationCenter.default.removeObserver($0) } }
     func refresh() {
+        guard !exclusiveActive else { return }
         let next = GCController.controllers().first
         if controller === next { return }
         controller?.extendedGamepad?.valueChangedHandler = nil
@@ -104,7 +111,7 @@ final class ControllerModel: ObservableObject {
             let stick = element === gamepad.leftThumbstick ? "Left stick" : (element === gamepad.rightThumbstick ? "Right stick" : nil)
             let tick = DispatchTime.now().uptimeNanoseconds
             MainActor.assumeIsolated {
-                guard self.controller === c, self.background || NSApp.isActive else { return }
+                guard !self.exclusiveActive, self.controller === c, self.background || NSApp?.isActive == true else { return }
                 let left = CGPoint(x: CGFloat(lx), y: CGFloat(ly)), right = CGPoint(x: CGFloat(rx), y: CGFloat(ry))
                 if self.left != left { self.left = left }
                 if self.right != right { self.right = right }
@@ -122,7 +129,97 @@ final class ControllerModel: ObservableObject {
 
     private var held: Set<String> { Set(pressedStates.filter { $0.value }.keys) }
 
+    func beginExclusive() throws {
+        guard !exclusiveActive else { return }
+        exclusiveInput.onReport = { [weak self] in self?.receiveExclusive($0) }
+        exclusiveInput.onLoss = { [weak self] in self?.loseExclusive("Vader 4 Pro 接收器已断开。") }
+        try exclusiveInput.open()
+        exclusiveActive = true
+        exclusiveSeeded = false
+        cancelHomeDiagnostic()
+        device = "Flydigi VADER4"
+        profile = "Vader 4 Pro USB · HID 独占"
+        homeInfo = "从 USB 报告读取 Home，系统手势偏好适用于共享手柄模式。"
+        log("connection", "HID", "exclusive open")
+        lastExclusiveReport = ProcessInfo.processInfo.systemUptime
+        let watchdog = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.checkExclusiveReports() }
+        }
+        exclusiveWatchdog = watchdog
+        RunLoop.main.add(watchdog, forMode: .common)
+    }
+
+    private func checkExclusiveReports() {
+        let elapsed = ProcessInfo.processInfo.systemUptime - lastExclusiveReport
+        if !exclusiveSeeded && elapsed >= 5 {
+            loseExclusive("独占后未收到可识别的手柄报告。")
+        } else if exclusiveSeeded && elapsed >= 0.75 &&
+                    (!held.isEmpty || hypot(left.x, left.y) > 0.04 || hypot(right.x, right.y) > 0.04) {
+            loseExclusive("手柄在按键或摇杆未回中时停止发送报告，已释放独占。")
+        }
+    }
+
+    func endExclusive() {
+        guard exclusiveActive else { return }
+        exclusiveWatchdog?.invalidate()
+        exclusiveWatchdog = nil
+        exclusiveInput.close()
+        exclusiveActive = false
+        exclusiveSeeded = false
+        cancelHomeDiagnostic()
+        log("connection", "HID", "exclusive close")
+        let previous = controller
+        refresh()
+        if previous === controller {
+            profile = controller?.extendedGamepad != nil ? "Physical Input + Extended Gamepad" : "—"
+            device = controller?.vendorName ?? "未连接"
+            if controller == nil { homeInfo = "未连接：无法判断 Home 是否暴露" }
+            else { applyGesture() }
+            publishDevice()
+        }
+    }
+
+    private func loseExclusive(_ reason: String) {
+        endExclusive()
+        onExclusiveLoss?(reason)
+    }
+
+    private func receiveExclusive(_ report: VaderInputReport) {
+        guard exclusiveActive else { return }
+        lastExclusiveReport = ProcessInfo.processInfo.systemUptime
+        let tick = DispatchTime.now().uptimeNanoseconds
+        let leftChanged = left != report.left
+        let rightChanged = right != report.right
+        if leftChanged { left = report.left }
+        if rightChanged { right = report.right }
+        if !exclusiveSeeded {
+            exclusiveSeeded = true
+            buttons = report.values
+            pressedStates = report.values.mapValues { $0 > 0.5 }
+            onDevice?(Set(VaderInputReport.buttons), held, left, right)
+            return
+        }
+        if leftChanged, tick >= (axisLog["Left stick"] ?? 0) + 100_000_000 {
+            axisLog["Left stick"] = tick
+            log("axis", "Left stick", "\(left.x),\(left.y)", tick: tick)
+        }
+        if rightChanged, tick >= (axisLog["Right stick"] ?? 0) + 100_000_000 {
+            axisLog["Right stick"] = tick
+            log("axis", "Right stick", "\(right.x),\(right.y)", tick: tick)
+        }
+        let changedButtons = report.values.filter { buttons[$0.key] != $0.value }
+        guard leftChanged || rightChanged || !changedButtons.isEmpty else { return }
+        for (name, value) in changedButtons {
+            updateButton(name, value: value, pressed: value > 0.5, tick: tick)
+        }
+        onInput?(held, left, right, tick)
+    }
+
     func publishDevice() {
+        if exclusiveActive {
+            if exclusiveSeeded { onDevice?(Set(VaderInputReport.buttons), held, left, right) }
+            return
+        }
         guard let gamepad = controller?.extendedGamepad else { onDevice?([], [], .zero, .zero); return }
         let inputs = Self.inputs(gamepad)
         pressedStates = Dictionary(uniqueKeysWithValues: inputs.map { ($0.0, $0.1.isPressed) })
@@ -168,7 +265,7 @@ final class ControllerModel: ObservableObject {
     }
 
     func applyGesture() {
-        guard let controller else { return }
+        guard !exclusiveActive, let controller else { return }
         let physicalHome = controller.physicalInputProfile.buttons[GCInputButtonHome]
         let extendedHome = controller.extendedGamepad?.buttonHome
         let preference: GCControllerElement.SystemGestureState = gestureDisabled ? .disabled : .enabled
@@ -205,7 +302,7 @@ final class ControllerModel: ObservableObject {
         log(pressed ? "press" : "release", name, String(format: "%.3f", value), duration: duration, long: duration.map { $0 >= 600 }, tick: tick)
     }
     func log(_ type: String, _ input: String, _ value: String, duration: Double? = nil, long: Bool? = nil, tick: UInt64 = DispatchTime.now().uptimeNanoseconds) {
-        events.append(LogEvent(timestamp: clock.string(from: Date()), uptimeMilliseconds: Double(tick) / 1_000_000, device: device, appState: NSApp.isActive ? "foreground" : "background", backgroundMonitoring: background, type: type, input: input, value: value, durationMilliseconds: duration, longPress600ms: long))
+        events.append(LogEvent(timestamp: clock.string(from: Date()), uptimeMilliseconds: Double(tick) / 1_000_000, device: device, appState: NSApp?.isActive == true ? "foreground" : "background", backgroundMonitoring: background, type: type, input: input, value: value, durationMilliseconds: duration, longPress600ms: long))
     }
     func setResult(_ key: String, _ value: String) { results[key] = value; UserDefaults.standard.set(results, forKey: "manualResults"); log("manual", key, value) }
     func export(csv: Bool) {

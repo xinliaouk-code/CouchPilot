@@ -31,6 +31,7 @@ final class CouchPilotApp: NSObject, NSApplicationDelegate {
     private var visible = false
     private var held: Set<String> = []
     private var left = CGPoint.zero
+    private var right = CGPoint.zero
     private var selection = RadialSelection()
     private let radial = RadialPresentation()
     private var menuOriginApp: NSRunningApplication?
@@ -59,29 +60,51 @@ final class CouchPilotApp: NSObject, NSApplicationDelegate {
         radial.close = { [weak self] in self?.close() }
         radial.back = { [weak self] in self?.back() }
         model.onInput = { [weak self] held, left, right, tick in self?.route(held, left, right, tick) }
-        mouse.onError = { [weak self] message in
-            self?.settings.trusted = AXIsProcessTrusted()
-            self?.reportError("Mouse", message)
+        mouse.onError = { [weak self] in self?.reportError("Mouse", $0) }
+        mouse.onPermissionChange = { [weak self] trusted in
+            self?.settings.trusted = trusted
+            self?.radial.desktopTrusted = trusted
+            if !trusted {
+                DispatchQueue.main.async { [weak self] in
+                    guard let self, self.model.exclusiveActive, !self.settings.trusted else { return }
+                    self.setMode(false)
+                }
+            }
         }
         model.onFocus = { [weak self] active in
-            guard let self, !self.model.background else { return }
+            guard let self, !self.model.exclusiveActive, !self.model.background else { return }
             self.mouse.suspend()
             self.triggers.reset()
             if active { self.model.publishDevice() }
         }
-        model.onDevice = { [weak self] available, held, left, _ in
+        model.onExclusiveLoss = { [weak self] reason in
+            self?.setMode(false)
+            self?.reportError("HID", reason)
+        }
+        model.onDevice = { [weak self] available, held, left, right in
             guard let self else { return }
             self.mouse.suspend()
             self.exposed = available
             self.held = held
             self.left = left
+            self.right = right
             self.backgroundHomeSeen = false
             self.triggers.reset()
             self.configureCombination()
+            self.refreshOverlayStatus()
             self.triggers.update(pressed: held, tick: DispatchTime.now().uptimeNanoseconds)
-            if available.isEmpty, self.visible { self.close() }
+            if available.isEmpty {
+                if self.visible { self.close() }
+            } else if self.radial.mouseMode, !self.visible {
+                self.primeDesktopInput()
+            }
         }
         let workspace = NSWorkspace.shared.notificationCenter
+        for name in [NSWorkspace.didActivateApplicationNotification, NSWorkspace.didTerminateApplicationNotification] {
+            sleepTokens.append(workspace.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.refreshOverlayStatus() }
+            })
+        }
         for name in [NSWorkspace.willSleepNotification, NSWorkspace.sessionDidResignActiveNotification,
                      NSWorkspace.didWakeNotification, NSWorkspace.sessionDidBecomeActiveNotification] {
             sleepTokens.append(workspace.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
@@ -91,7 +114,10 @@ final class CouchPilotApp: NSObject, NSApplicationDelegate {
                     self.mouse.suspend()
                     self.model.cancelHomeDiagnostic()
                     self.triggers.reset()
-                    if self.pausedForSession { self.close(restoreFocus: false) }
+                    if self.pausedForSession {
+                        self.close(restoreFocus: false)
+                        if self.model.exclusiveActive { self.setMode(false) }
+                    }
                     else { self.model.publishDevice() }
                 }
             })
@@ -103,6 +129,12 @@ final class CouchPilotApp: NSObject, NSApplicationDelegate {
         applySettings(previous: nil)
         setMode(settings.value.startInMouse)
         model.publishDevice()
+        showDiagnostics()
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        showDiagnostics()
+        return false
     }
 
     @objc private func statusClicked() {
@@ -130,12 +162,11 @@ final class CouchPilotApp: NSObject, NSApplicationDelegate {
             model.gestureDisabled = value.requestHomeGestureDisabled
         }
         if previous?.homeOpensRadial != value.homeOpensRadial ||
-            previous?.homeMS != value.homeMS || previous?.comboMS != value.comboMS ||
+            previous?.radialHoldMS != value.radialHoldMS ||
             previous?.combo != value.combo || previous?.comboEnabled != value.comboEnabled {
             mouse.suspend()
             triggers.homeEnabled = value.homeOpensRadial
-            triggers.homeMS = value.homeMS
-            triggers.comboMS = value.comboMS
+            triggers.holdMS = value.radialHoldMS
             configureCombination()
             triggers.update(pressed: held, tick: DispatchTime.now().uptimeNanoseconds)
         }
@@ -144,6 +175,8 @@ final class CouchPilotApp: NSObject, NSApplicationDelegate {
             settings.keyboard = result == noErr ? "Available · 已注册，后台实测待确认" : "Conflict · OSStatus \(result)"
             model.log("setting", "Keyboard shortcut", settings.keyboard)
         }
+        refreshOverlayStatus()
+        mouse.mapping = value.desktopMapping
         mouse.tuning = value.mouse
         mouse.display = value.display
         selection.threshold = value.selectionThreshold
@@ -157,6 +190,7 @@ final class CouchPilotApp: NSObject, NSApplicationDelegate {
         let chord = Set(value.combo)
         let supported = chord.count == 3 && chord.isSubset(of: exposed)
         triggers.combination = value.comboEnabled && supported ? chord : []
+        settings.reservedDesktopButtons = triggers.combination
         settings.combo = !value.comboEnabled ? "Not Verified · 已停用"
             : (supported ? "Available · 键已暴露" : "Not Verified · 缺少 \(chord.subtracting(exposed).sorted().joined(separator: ", "))")
         if exposed.contains("Home"), !value.homeOpensRadial {
@@ -171,16 +205,34 @@ final class CouchPilotApp: NSObject, NSApplicationDelegate {
         if !settings.trusted { mouse.suspend() }
     }
 
-    private func setMode(_ mouseMode: Bool) {
+    private func primeDesktopInput() {
+        mouse.prime(held, reserved: triggers.combination, left: left, right: right)
+    }
+
+    private func setMode(_ desktopMode: Bool) {
         mouse.suspend()
-        radial.mouseMode = mouseMode
-        settings.mouseMode = mouseMode
-        close()
-        if mouseMode {
+        triggers.reset()
+        if desktopMode {
             refreshPermission()
-            if !settings.trusted { reportError("Mouse", "需要辅助功能权限。请在设置的鼠标页授权并重新检查。") }
+            guard settings.trusted else {
+                reportError("Mouse", "需要辅助功能权限。请在设置的指针页授权并重新检查。")
+                return
+            }
+            do {
+                try model.beginExclusive()
+            } catch {
+                reportError("HID", error.localizedDescription)
+                return
+            }
+        } else {
+            radial.mouseMode = false
+            settings.mouseMode = false
+            model.endExclusive()
         }
-        model.log("mode", "control", mouseMode ? "mouse" : "native")
+        radial.mouseMode = desktopMode
+        settings.mouseMode = desktopMode
+        close()
+        model.log("mode", "control", desktopMode ? "mouse · HID exclusive" : "native")
     }
 
     private func refreshRecent() {
@@ -204,7 +256,8 @@ final class CouchPilotApp: NSObject, NSApplicationDelegate {
         let edges = pressed.subtracting(held)
         held = pressed
         self.left = left
-        guard !pausedForSession, model.background || NSApp.isActive else { return }
+        self.right = right
+        guard !pausedForSession, model.exclusiveActive || model.background || NSApp.isActive else { return }
         if settings.learning {
             mouse.suspend()
             triggers.reset()
@@ -221,7 +274,9 @@ final class CouchPilotApp: NSObject, NSApplicationDelegate {
         triggers.update(pressed: pressed, tick: tick)
         guard wasVisible == visible else { return }
         guard visible else {
-            if radial.mouseMode, model.background || NSApp.isActive { mouse.consume(pressed.subtracting(triggers.combination.intersection(["A", "B", "X", "Y"])), left: left, right: right) }
+            if radial.mouseMode && model.exclusiveActive {
+                mouse.consume(pressed, reserved: triggers.combination, left: left, right: right)
+            }
             return
         }
         if edges.contains("B") { close(); return }
@@ -278,10 +333,34 @@ final class CouchPilotApp: NSObject, NSApplicationDelegate {
         menuOriginApp = NSWorkspace.shared.frontmostApplication
         visible = true
         back()
-        radial.origin = menuOriginApp?.localizedName ?? "桌面"
-        radial.device = model.device
+        refreshOverlayStatus()
         overlay.show(RadialView(state: radial), screen: DisplayManager.screen(preferred: settings.value.display),
                      size: 520 * settings.value.scale, opacity: settings.value.opacity)
+    }
+
+    private func refreshOverlayStatus() {
+        guard visible else { return }
+        let foreground = NSWorkspace.shared.frontmostApplication
+        radial.foregroundName = foreground?.localizedName ?? ""
+        radial.foregroundIcon = foreground?.icon
+        radial.foregroundRunning = foreground.map { $0.isFinishedLaunching && !$0.isTerminated } ?? false
+        radial.foregroundStatus = radial.foregroundRunning ? "运行中"
+            : (foreground?.isTerminated == true ? "已退出" : "正在启动")
+        radial.device = model.device
+        radial.deviceConnected = model.device != "未连接"
+        radial.desktopTrusted = settings.trusted
+        let combo = settings.value.combo.filter { triggers.combination.contains($0) }
+        var holdTriggers = combo.isEmpty ? [] : [combo.map {
+            switch $0 {
+            case "LB": return "L1"
+            case "RB": return "R1"
+            case "Menu": return "Start"
+            default: return $0
+            }
+        }.joined(separator: " + ")]
+        if triggers.homeEnabled && exposed.contains("Home") { holdTriggers.append("Home") }
+        radial.triggerHint = holdTriggers.isEmpty ? "菜单栏图标呼出 / 关闭"
+            : "长按 " + holdTriggers.joined(separator: " 或 ") + " 呼出 / 关闭"
     }
 
     private func close(restoreFocus: Bool = true) {
@@ -292,14 +371,21 @@ final class CouchPilotApp: NSObject, NSApplicationDelegate {
             reportError("Overlay", "无法返回呼出轮盘前的应用。")
         }
         menuOriginApp = nil
+        if radial.mouseMode { primeDesktopInput() }
     }
 
     private func choose(_ action: RadialAction) {
         guard visible else { return }
         switch action {
         case .settings: close(restoreFocus: false); showDiagnostics()
-        case .mouse, .native:
-            setMode(action == .mouse)
+        case .inputMode:
+            let previousMode = radial.mouseMode
+            // A confirmation can arrive inside a GameController callback.
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.visible, self.radial.mouseMode == previousMode else { return }
+                self.setMode(!previousMode)
+            }
+        case .pause: break
         case .running:
             showList(action.label, choices: history.running.map { app in
                 let name = app.localizedName ?? "应用"
@@ -351,10 +437,13 @@ final class CouchPilotApp: NSObject, NSApplicationDelegate {
         }
         NSApp.activate()
         window?.makeKeyAndOrderFront(nil)
+        if radial.mouseMode { primeDesktopInput() }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         mouse.suspend()
+        radial.mouseMode = false
+        model.endExclusive()
         triggers.reset()
         triggers.unregister()
         for token in sleepTokens { NSWorkspace.shared.notificationCenter.removeObserver(token) }

@@ -1,0 +1,25 @@
+Vader 4 Pro USB receiver — 2026-11-05
+
+One USB gamepad matched product Flydigi VADER4, VID 0x045e, PID 0x028e,
+usage page 1, usage 5, and the recorded Xbox360Gamepad report descriptor.
+Shared open, exclusive open, explicit close and shared reopen returned 0.
+A concurrent second exclusive open returned 0xe00002c5 (exclusive access).
+
+Physical A/B and left-stick input, separate observer processes:
+                              before    during     after
+Shared HID value changes      14916          0     13729
+GameController callbacks      10058          0     11552
+Exclusive owner's HID value changes during seizure: 11092.
+
+Physical L1 + R1 + Start routed through the production HID adapter,
+ControllerModel and TriggerManager without opening a window.
+The production model released ownership and an independent instance
+immediately acquired it again. A separate process-exit test also allowed
+immediate reacquisition after exiting without an explicit close.
+
+Reproduce the production-path check from the repository root:
+  swiftc CouchPilot/{ControllerModel,VaderExclusiveInput,TriggerManager}.swift diagnostics/vader-exclusive-probe.swift -o /tmp/couchpilot-vader-probe
+  /tmp/couchpilot-vader-probe --chord
+Only run the hardware probe when ready to use the controller. It briefly
+takes exclusive control of the matching gamepad and then releases it.
+This check does not exercise the visible wheel, mouse injection, or a specific game.
