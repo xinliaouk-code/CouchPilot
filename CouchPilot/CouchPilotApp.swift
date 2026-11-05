@@ -129,9 +129,11 @@ final class CouchPilotApp: NSObject, NSApplicationDelegate {
         if previous?.requestHomeGestureDisabled != value.requestHomeGestureDisabled {
             model.gestureDisabled = value.requestHomeGestureDisabled
         }
-        if previous?.homeMS != value.homeMS || previous?.comboMS != value.comboMS ||
+        if previous?.homeOpensRadial != value.homeOpensRadial ||
+            previous?.homeMS != value.homeMS || previous?.comboMS != value.comboMS ||
             previous?.combo != value.combo || previous?.comboEnabled != value.comboEnabled {
             mouse.suspend()
+            triggers.homeEnabled = value.homeOpensRadial
             triggers.homeMS = value.homeMS
             triggers.comboMS = value.comboMS
             configureCombination()
@@ -157,7 +159,9 @@ final class CouchPilotApp: NSObject, NSApplicationDelegate {
         triggers.combination = value.comboEnabled && supported ? chord : []
         settings.combo = !value.comboEnabled ? "Not Verified · 已停用"
             : (supported ? "Available · 键已暴露" : "Not Verified · 缺少 \(chord.subtracting(exposed).sorted().joined(separator: ", "))")
-        if exposed.contains("Home") {
+        if exposed.contains("Home"), !value.homeOpensRadial {
+            settings.home = "已暴露 · 仅诊断"
+        } else if exposed.contains("Home") {
             settings.home = backgroundHomeSeen ? "已收到后台长按 · 本次连接" : "Not Verified · 已暴露，后台待验证"
         } else { settings.home = "Not Verified · 未暴露或未连接" }
     }

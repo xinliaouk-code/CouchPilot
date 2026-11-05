@@ -53,6 +53,17 @@ struct StateChecks {
         var sources: [String] = []
         triggers.fire = { sources.append($0) }
         let epoch = DispatchTime.now().uptimeNanoseconds + 5_000_000_000
+        let chord: Set<String> = ["LB", "RB", "Menu"]
+        triggers.update(pressed: [], tick: epoch)
+        triggers.update(pressed: ["Home"], tick: epoch + 1_000_000)
+        triggers.update(pressed: [], tick: epoch + 701_000_000)
+        precondition(sources.isEmpty, "Home does not open the menu by default")
+        triggers.update(pressed: chord, tick: epoch + 702_000_000)
+        triggers.update(pressed: chord, tick: epoch + 1_402_000_000)
+        precondition(sources == ["Controller chord"], "default chord opens the menu")
+        print("PASS: default chord opens the menu, Home requires opt-in")
+        sources.removeAll()
+        triggers.homeEnabled = true
         triggers.update(pressed: [], tick: epoch)
         for index in 0..<30 {
             let start = epoch + UInt64(index + 1) * 2_000_000_000
@@ -81,6 +92,9 @@ struct StateChecks {
         store.value.combo = ["LB", "X", "L3"]
         let restored = SettingsStore(defaults: defaults)
         precondition(restored.value == store.value)
+        precondition(!restored.value.homeOpensRadial, "old settings keep their values and use the default chord")
+        restored.value.homeOpensRadial = true
+        precondition(SettingsStore(defaults: defaults).value.homeOpensRadial)
         print("PASS E: independent settings store restores trigger, mode, display and mouse values")
         print("PASS A: initial hold, exact threshold, duplicate input, short press")
     }

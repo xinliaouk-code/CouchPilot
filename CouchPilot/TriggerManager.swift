@@ -33,6 +33,7 @@ final class TriggerManager {
     private var home = HoldGate()
     private var combo = HoldGate()
     private var timer: DispatchWorkItem?
+    var homeEnabled = false { didSet { if oldValue != homeEnabled { reset() } } }
     var homeMS = 600 { didSet { if oldValue != homeMS { reset() } } }
     var comboMS = 700 { didSet { if oldValue != comboMS { reset() } } }
     var combination: Set<String> = ["LB", "RB", "Menu"] {
@@ -55,7 +56,7 @@ final class TriggerManager {
         let oldCombo = combo.started
         // A release delivered after the threshold still completes the hold.
         completeHolds(at: tick)
-        home.update(held: pressed.contains("Home"), at: tick)
+        home.update(held: homeEnabled && pressed.contains("Home"), at: tick)
         combo.update(held: !combination.isEmpty && combination.isSubset(of: pressed), at: tick)
         if oldHome != home.started || oldCombo != combo.started { schedule() }
     }

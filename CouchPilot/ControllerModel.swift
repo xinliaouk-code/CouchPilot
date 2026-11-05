@@ -27,6 +27,7 @@ final class ControllerModel: ObservableObject {
     @Published var device = "未连接"
     @Published var profile = "—"
     @Published var homeInfo = "等待手柄"
+    @Published private(set) var homeSystemAction = "尚未检查"
     @Published var buttons: [String: Float] = [:]
     @Published var left = CGPoint.zero
     @Published var right = CGPoint.zero
@@ -82,6 +83,7 @@ final class ControllerModel: ObservableObject {
         cancelHomeDiagnostic()
         controller = next; buttons = [:]; pressedStates = [:]; left = .zero; right = .zero
         axisLog.removeAll()
+        homeSystemAction = "尚未检查"
         defer { publishDevice() }
         guard let c = next else {
             device = "未连接"; profile = "—"; homeInfo = "未连接：无法判断 Home 是否暴露"; log("connection", "controller", "disconnected / none"); return
@@ -136,12 +138,47 @@ final class ControllerModel: ObservableObject {
         homeDown = nil
     }
 
+    @available(macOS 27.0, *)
+    func openHomeSystemSettings() {
+        guard controller != nil else { return }
+        do {
+            try GCControllerHomeButtonSettingsManager().openControllerHomeButtonSettings(for: .customizeSystemAction)
+        } catch {
+            homeSystemAction = "无法打开系统设置：\(error.localizedDescription)"
+            log("error", "Home system action", homeSystemAction)
+        }
+    }
+
+    @available(macOS 27.0, *)
+    func checkHomeSystemAction() {
+        guard controller != nil else { return }
+        do {
+            let action = try GCControllerHomeButtonSettingsManager().controllerHomeButtonSystemAction.action
+            switch action {
+            case .disabled: homeSystemAction = "已关闭"
+            case .other: homeSystemAction = "系统报告有其他 Home 动作，请在系统设置查看具体动作"
+            case .openCurrentApplication: homeSystemAction = "打开当前应用"
+            case .unavailable: homeSystemAction = "系统未提供设置状态"
+            @unknown default: homeSystemAction = "未知状态"
+            }
+        } catch {
+            homeSystemAction = "无法读取系统状态，请在系统设置查看"
+        }
+        log("setting", "Home system action", homeSystemAction)
+    }
+
     func applyGesture() {
-        guard let home = controller?.extendedGamepad?.buttonHome else {
-            if controller != nil { homeInfo = "buttonHome 未暴露；无法读取或控制系统手势。原因可能是设备、接收器映射或系统，不能仅凭此确定。" }
+        guard let controller else { return }
+        let physicalHome = controller.physicalInputProfile.buttons[GCInputButtonHome]
+        let extendedHome = controller.extendedGamepad?.buttonHome
+        let preference: GCControllerElement.SystemGestureState = gestureDisabled ? .disabled : .enabled
+        physicalHome?.preferredSystemGestureState = preference
+        if extendedHome !== physicalHome { extendedHome?.preferredSystemGestureState = preference }
+        guard let home = extendedHome else {
+            homeInfo = "Extended Gamepad 未暴露 Home；物理映射：\(physicalHome == nil ? "未暴露" : "已暴露")。当前轮盘读取 Extended Gamepad 输入。"
+            log("setting", "Home gesture", homeInfo)
             return
         }
-        home.preferredSystemGestureState = gestureDisabled ? .disabled : .enabled
         homeInfo = "buttonHome 已暴露 · isBoundToSystemGesture: \(home.isBoundToSystemGesture) · preferred: \(home.preferredSystemGestureState == .disabled ? "disabled" : "enabled")（系统不保证遵从）"
         log("setting", "Home gesture", homeInfo)
     }

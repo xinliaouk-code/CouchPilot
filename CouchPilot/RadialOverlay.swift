@@ -129,7 +129,7 @@ struct RadialView: View {
                     Circle().strokeBorder(.secondary.opacity(0.25), lineWidth: 1).frame(width: size * 0.61)
                     VStack(spacing: 6) {
                         Text(state.selected?.label ?? "选择方向").font(.system(size: size * 0.033, weight: .semibold))
-                        Text("松开 Home 保持").font(.system(size: size * 0.024)).foregroundStyle(.secondary)
+                        Text("松开触发键后保持").font(.system(size: size * 0.024)).foregroundStyle(.secondary)
                     }
                     .frame(width: size * 0.24, height: size * 0.24)
                     .background(Color.accentColor.opacity(0.12), in: Circle())
@@ -155,7 +155,6 @@ struct RadialView: View {
                     HStack(spacing: 14) {
                         Button("B 关闭") { state.close?() }
                         Button("LB 上一级") { state.back?() }.disabled(state.choices == nil)
-                        Text("Home 菜单").foregroundStyle(.secondary)
                         Button("A 确认") { state.confirm?() }
                             .disabled(state.choices == nil ? state.selected == nil : state.listIndex == nil)
                     }.font(.system(size: size * 0.027, weight: .medium)).controlSize(.large)

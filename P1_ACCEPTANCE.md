@@ -1,6 +1,6 @@
 # CouchPilot P1 验收记录
 
-2026-11-05，Apple Silicon，macOS 27.0.1，Xcode / SDK 27.2。P1-A 至 E 均各自完成 Release 构建及相应的无界面状态检查。最终 ARM64 App 通过本地代码签名完整性检查。此次 P1 命令行探测返回零台设备。根据桌面后台测试约定，可见窗口、真实鼠标注入、应用切换、显示器及全屏验收标为 GUI_REQUIRED。
+2026-11-05，Apple Silicon，macOS 27.0.1，Xcode / SDK 27.2。P1-A 至 E 均各自完成 Release 构建及相应的无界面状态检查。最终 ARM64 App 通过本地代码签名完整性检查。初次 P1 命令行探测返回零台设备，后续用户在连接手柄的桌面上补测了 Home。根据桌面后台测试约定，可见窗口、真实鼠标注入、应用切换、显示器及全屏验收标为 GUI_REQUIRED。
 
 | 阶段 | 交付 | 本轮自动化证据 |
 |---|---|---|
@@ -10,16 +10,18 @@
 | P1-D | 运行中应用、最近历史、收藏、Finder、默认浏览器 | MRU、重复激活、退出清理和上一应用 |
 | P1-E | 本地设置、登录项、显示器、日志与集成 | 独立偏好套件恢复、30 次交替触发、App 签名检查 |
 
-历史实机证据来自用户的 P0 截图。设备显示为 Flydigi VADER4，`buttonHome` 已暴露，`isBoundToSystemGesture=true`，一次观察时 `preferred=disabled`。前台短按和长按均有按下/释放日志，长按包括 914.2ms 和 960.0ms，且显示达到 600ms。另有后台右摇杆轴事件。P0 截图无法确认后台 Home 或 Games/Spotlight 状态，P1 的全局 Home 仍待复测。
+历史实机证据来自用户的 P0 截图。设备显示为 Flydigi VADER4，`buttonHome` 已暴露，`isBoundToSystemGesture=true`，一次观察时 `preferred=disabled`。前台短按和长按均有按下/释放日志，长按包括 914.2ms 和 960.0ms，且显示达到 600ms。另有后台右摇杆轴事件。P0 截图无法确认后台 Home 或 Games/Spotlight 状态。
+
+用户随后在 P1 诊断更新版上实测。设备显示为 Flydigi VADER4，后台监听已开启，Home 已暴露，`isBoundToSystemGesture=true`，`preferred=disabled`。截图显示两组前台 Home 按下和释放，分别持续 137.5ms 和 220.0ms。用户报告切换到其他 App 后按 Home 无反应且无 Home 日志。截图还记录了一次以前台 Codex 为来源的菜单栏打开请求。这次后台 Home 尝试未通过，其他前台应用和系统 Home 动作配置仍需分别复测。随后用户确认同时按住 LB + RB + Menu/Start 约一秒，成功呼出轮盘。该次报告未提供前台应用名称。根据这次结果，LB + RB + Menu/Start 保留为默认全局手柄入口，Home 默认只记录诊断，长按呼出可手动启用。
 
 | 编号 | 场景 | P1 实机状态 | 证据或待验证内容 |
 |---|---|---|---|
-| T01 | 手柄识别 | NOT TESTED | P0 有识别截图，P1 探测为 0 |
-| T02 | 前台 Home 长按呼出 | PARTIAL | P0 有前台长按记录，P1 的面板呼出待测 |
-| T03 | 后台 Home 长按 | NOT TESTED | Safari、Finder、第三个普通 App 各记录短按、长按和 release |
-| T04 | Games/Spotlight 冲突 | NOT TESTED | 在 Shortcuts ON/OFF 及手势偏好下分别观察 |
+| T01 | 手柄识别 | PASS | P1 用户实机截图显示 Flydigi VADER4 和 Extended Gamepad |
+| T02 | 前台 Home 长按呼出 | PARTIAL | P0 有前台长按记录。P1 有前台按下和释放记录，两次均低于 600ms。P1 长按呼出待验 |
+| T03 | 后台 Home 长按 | FAIL（本次配置） | 后台监听已开启，用户报告离开 CouchPilot 后没有 Home 响应或日志。Safari、Finder 等应用和其余配置仍待复测 |
+| T04 | Games/Spotlight 冲突 | PARTIAL | 此前用户报告启用系统 Home 动作时短按打开 Spotlight。关闭后的行为和其他配置待复测 |
 | T05 | 全局键盘呼出 | NOT TESTED | 普通 App 前台，默认及改绑键；验证系统冲突提示 |
-| T06 | 备用手柄组合键 | PARTIAL | 命令行测过门限和重复触发，设备 Menu 暴露及学习待验 |
+| T06 | 备用手柄组合键 | PASS | 用户实测同时按住 LB + RB + Menu/Start 约一秒，轮盘成功显示。重新学习和分应用兼容性待测 |
 | T07 | Home 松开保持轮盘 | NOT TESTED | 长按打开，松开后停留 |
 | T08 | 八向选择稳定 | PARTIAL | 八扇区、回中和滞后命令行测试通过 |
 | T09 | A 单次确认 | NOT TESTED | 按住 A 和打开时已按住 A 各测一次 |
@@ -40,4 +42,6 @@
 | T24 | 原生全屏 | NOT TESTED | 普通全屏应用、Space 与备用路径，独占场景需另测 |
 | T25 | 30 次完整菜单操作 | PARTIAL | 30 次命令行触发通过，桌面呼出、切换、关闭和注入待验 |
 
-GUI_REQUIRED 包含可见的 CouchPilot 窗口、实际点击和拖动、在 Safari/Finder 间切换与使用全屏或外接屏。需要用户亲自执行或明确授权操作桌面。此轮没有 P1 实际渲染截图、真实手柄输入日志或性能量测。P0 截图和用户的 P1 交互示意均不作为 P1 界面验收证据。可复查 [命令行验证输出](diagnostics/p1-validation.txt)。
+GUI_REQUIRED 包含可见的 CouchPilot 窗口、实际点击和拖动、在 Safari/Finder 间切换与使用全屏或外接屏。需要用户亲自执行或明确授权操作桌面。P1 设置与诊断界面有用户实机截图和截图中的输入日志，尚无完整导出日志、轮盘渲染截图或性能量测。可复查 [命令行验证输出](diagnostics/p1-validation.txt)。
+
+默认入口调整后的 Release 构建和本地签名完整性检查通过。命令行回归确认默认组合键可以触发、Home 需要手动启用、旧偏好可读取且保留其他值。T06 的实机记录来自用户在此次默认入口调整前的测试。

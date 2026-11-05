@@ -5,6 +5,12 @@ import SwiftUI
 
 struct PilotConfiguration: Codable, Equatable {
     var startInMouse = false
+    // Older settings have no Home trigger flag. Keep their other preferences.
+    private var homeTriggerEnabled: Bool?
+    var homeOpensRadial: Bool {
+        get { homeTriggerEnabled ?? false }
+        set { homeTriggerEnabled = newValue }
+    }
     var homeMS = 600
     var comboEnabled = true
     var comboMS = 700
@@ -109,9 +115,20 @@ struct PilotSettingsView: View {
 
             Form {
                 Toggle("监听后台手柄事件", isOn: $store.value.background)
+                Toggle("用 Home 长按呼出轮盘（实验）", isOn: $store.value.homeOpensRadial)
                 Toggle("请求禁用 Home 系统手势", isOn: $store.value.requestHomeGestureDisabled)
                 Stepper("Home 长按 · \(store.value.homeMS) ms", value: $store.value.homeMS, in: 200...2000, step: 50)
+                    .disabled(!store.value.homeOpensRadial)
                 LabeledContent("Home", value: store.home)
+                if #available(macOS 27.0, *) {
+                    LabeledContent("macOS Home 动作", value: model.homeSystemAction)
+                    HStack {
+                        Button("打开系统 Home 设置") { model.openHomeSystemSettings() }
+                        Button("重新检查") { model.checkHomeSystemAction() }
+                    }.disabled(model.device == "未连接")
+                }
+                Text("要停止 Home 短按打开 Spotlight，请关闭系统设置里的 Enable Home Button Actions。关掉后分别测试前台和后台长按。")
+                    .foregroundStyle(.secondary)
                 LabeledContent("菜单栏入口", value: "Available")
                 Picker("快捷键修饰键", selection: $store.value.hotModifiers) {
                     Text("Control + Option").tag(UInt32(controlKey | optionKey))
@@ -123,7 +140,7 @@ struct PilotSettingsView: View {
                     ForEach(hotKeys, id: \.1) { key in Text(key.0).tag(UInt32(key.1)) }
                 }
                 LabeledContent("键盘注册", value: store.keyboard)
-                Toggle("启用备用手柄组合键", isOn: $store.value.comboEnabled)
+                Toggle("启用全局手柄组合键", isOn: $store.value.comboEnabled)
                 Stepper("组合键长按 · \(store.value.comboMS) ms", value: $store.value.comboMS, in: 300...2500, step: 50)
                 LabeledContent(store.value.combo.joined(separator: " + "), value: store.combo)
                 HStack {
